@@ -1,0 +1,26 @@
+{
+    "name": "ipl-ai-assistant",
+    "version": "1.0.0",
+    "description": "IPL AI Assistant - Real-time cricket analysis with AI insights",
+    "scripts": {
+        "dev": "concurrently \"npm run dev:api\" \"npm run dev:client\"",
+        "dev:api": "cd server && python -m uvicorn app:app --reload --port 8080",
+        "dev:client": "npm run dev --prefix client",
+        "build": "npm run build --prefix client",
+        "start": "cd server && uvicorn app:app --host 0.0.0.0 --port 8080",
+        "install-all": "npm install && npm install --prefix server && npm install --prefix client"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    },
+    "keywords": [
+        "ipl",
+        "cricket",
+        "ai",
+        "gemini",
+        "react",
+        "nodejs"
+    ],
+    "author": "",
+    "license": "MIT"
+}
