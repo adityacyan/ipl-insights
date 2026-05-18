@@ -1,103 +1,255 @@
-# 🏏 IPL AI Insights Agent
+# 🏏 IPL Insights — AI-Powered Second-Screen Companion
 
-A real-time, second-screen companion application designed to enhance the live sports viewing experience. This MVP was built specifically for the Indian Premier League (IPL) and transforms passive watching into an interactive, data-rich experience.
+> **The idea is simple:** Open this app side-by-side with your Hotstar tab. Watch the match. Get stats, AI insights, and win probabilities on your fingertips — without ever switching tabs.
 
-**[🔴 Live Demo on Google Cloud Run](https://ipl-agent-34304543027.us-central1.run.app)**
+**[🔴 Live Demo on Google Cloud Run](https://ipl-insight-123853821395.us-central1.run.app)**
 
-<img width="1680" height="1050" alt="Screenshot 2026-05-13 at 9 37 52 PM" src="https://github.com/user-attachments/assets/95598ed8-7eb1-442f-ac8a-0952c6e610e2" />
+---
+
+## 🎬 The Experience
+
+Most cricket fans watching on Hotstar or JioCinema have to constantly switch between the stream and a stats site to understand what's happening. **IPL Insights kills that friction.**
+
+Open the app on the right half of your screen, keep Hotstar on the left — and suddenly you have your own personal cricket analyst whispering insights in real time:
+
+- **"SHR needs 19 runs in 13 balls."**
+- **"Momentum shift — projected target probability hit 78% after over 17."**
+- **"MI adjusting to wide-line yorker strategy. Gaikwad efficiency vs wide pace is..."**
+
+That's not commentary. That's **Gemini AI reading the match for you.**
+
+---
+
+## 📸 Screenshots
+
+### 🔴 During a Live Match — Side-by-Side with Hotstar
+
+*This is exactly how it's meant to be used. Hotstar on the left, IPL Insights on the right.*
+
+![During Match — Side-by-side with Hotstar](./duringmatch.png)
+
+### ✅ After the Match — Standalone Post-Match View
+
+*Clean post-match summary with final win probability, tactical read, and AI insights.*
+
+![After Match — Standalone view](./aftermatch.png)
 
 ---
 
 ## ✨ Features
 
-This agent introduces a "True OTT (Over-The-Top)" layout, where the live match video serves as the immersive background, and an expandable AI overlay provides deep, contextual data.
-
-1. **Live Player Milestones (AI Predicted)**
-   - Automatically tracks the current active Batter and Bowler.
-   - Calculates and displays exact runs/wickets needed to break major records (e.g., Orange Cap, Purple Cap, All-time leading run-scorer).
-2. **Dynamic Playoff Predictor**
-   - An interactive league standings table.
-   - Users can toggle hypothetical match outcomes (e.g., "If MI Wins" vs "If RCB Wins").
-   - The agent instantly recalculates and animates the shifting playoff probabilities for all 10 teams in the league.
-3. **Second-Screen OTT Layout**
-   - Fullscreen responsive video placeholder.
-   - Floating Action Button (FAB) that slides out a frosted-glass sidebar containing the AI insights, ensuring the data never interrupts the live action.
+| Feature | What it does |
+|---|---|
+| 🎯 **Live Win Probability** | Real-time CSK vs SHR % calculated by Gemini every 30s |
+| 📊 **Momentum Shift Analysis** | AI detects scoring surges, wicket clusters, boundary patterns |
+| 🧠 **Tactical Read** | Field placement analysis, bowling strategy, batter matchups |
+| 💬 **Tactical Chat** | Ask anything — "Can CSK still win?" — and get an AI answer |
+| 📈 **Win Probability History** | Chart of how probabilities shifted over the innings |
+| 🏆 **Playoff Predictor** | Toggle hypothetical outcomes, see playoff picture shift live |
+| 🎖️ **Milestone Tracker** | Tracks how many runs/wickets till Orange Cap / Purple Cap |
 
 ---
 
-## 🏗 Architecture
+## 🏗️ Architecture
 
-The application is built using a modern JavaScript stack and containerized for serverless scaling.
+> **Honest note:** This was built in ~4 hours as a hackathon MVP. There are rough edges — polling instead of true WebSockets, mock data fallbacks, some hardcoded match IDs. But it *works*, and the core experience is real. Here's what's under the hood:
 
-* **Frontend:** React (bootstrapped with Vite)
-  * **Socket.IO Client:** Real-time WebSocket communication for live updates
-  * **Vanilla CSS:** Custom, premium dark-mode styling with glassmorphism effects and CSS grid layouts. No heavy UI libraries were used, ensuring lightning-fast load times.
-* **Backend:** FastAPI (Python)
-  * **Google Gemini AI:** Integration with Gemini 1.5 Flash for AI insights and analysis
-  * **Mock Data Engine:** The backend utilizes a lightweight Python mock data engine to simulate live context in the MVP.
-* **Deployment:** Docker & Google Cloud Run
-  * A multi-stage `Dockerfile` builds the static Vite frontend and serves it directly through the Express backend, resulting in a single, highly-optimized container. 
-  * Automatically deployed and scaled globally via Google Cloud Run.
+### System Architecture
+
+```mermaid
+graph TD
+    subgraph Browser ["🖥️ User's Browser (side-by-side)"]
+        HS["📺 Hotstar Tab\n(live match stream)"]
+        FE["⚛️ IPL Insights Tab\nReact + Vite Frontend"]
+    end
+
+    subgraph Frontend ["Frontend Components"]
+        WP["🎯 Win Probability\npolling every 30s"]
+        IP["🧠 Insights Panel\npolling every 30s"]
+        TC["💬 Tactical Chat\non-demand POST"]
+        WH["📈 Win Prob History Chart"]
+    end
+
+    subgraph Backend ["⚙️ FastAPI Backend (Python)"]
+        EP1["/api/insights/all-parallel\nasyncio.gather ⚡"]
+        EP2["/api/tactical-insights\nbatched 2-in-1"]
+        EP3["/api/tactical-chat\nconversational Q&A"]
+        EP4["/api/win-probability\nhistory data"]
+    end
+
+    subgraph AI ["🤖 Gemini AI — 3 Isolated Models"]
+        M1["gemini-1.5-flash\n15 RPM — General Insights"]
+        M2["gemini-2.0-flash-lite\n10 RPM — Tactical Read"]
+        M3["gemini-1.5-flash (chat)\n5 RPM — Q&A only"]
+    end
+
+    subgraph Data ["📦 Data Layer"]
+        MOCK["🏏 Mock Match Engine\nsimulates live context for MVP"]
+    end
+
+    subgraph Deploy ["☁️ Google Cloud Run"]
+        DOCKER["🐳 Single Docker Container\nFastAPI serves React build"]
+    end
+
+    FE --> WP & IP & TC & WH
+    WP & IP --> EP1
+    IP --> EP2
+    TC --> EP3
+    WH --> EP4
+
+    EP1 --> M1 & M2
+    EP2 --> M2
+    EP3 --> M3
+    EP4 --> M1
+
+    EP1 & EP2 & EP3 & EP4 --> MOCK
+    Backend --> DOCKER
+```
+
+> ⚠️ **Known limitations (4-hour build):** HTTP polling not true WebSockets · mock match data (no live CricAPI yet) · insights may repeat on fast polling · free Gemini tier quota fills up quickly
+
+---
+
+## 💰 How We Save on API Quota
+
+The free Gemini tier is brutal — 5 separate AI calls every 30s would exhaust daily quota in minutes. Here's the 3-layer strategy that keeps it alive:
+
+### Layer 1 — Prompt Batching (60% fewer calls)
+
+Instead of 1 call per insight, multiple questions are combined into one prompt and the response is parsed:
+
+```mermaid
+flowchart LR
+    subgraph BEFORE ["❌ Before — 5 separate calls"]
+        direction TB
+        A1["call: tactical insight"] --> G1[Gemini]
+        A2["call: momentum insight"] --> G2[Gemini]
+        A3["call: prediction"] --> G3[Gemini]
+        A4["call: momentum shift"] --> G4[Gemini]
+        A5["call: tactical read"] --> G5[Gemini]
+    end
+
+    subgraph AFTER ["✅ After — 2 batched calls"]
+        direction TB
+        B1["tactical + momentum + prediction\n3-in-1 prompt"] --> G6["Gemini Flash"]
+        B2["momentum shift + tactical read\n2-in-1 prompt"] --> G7["Gemini Flash Lite"]
+    end
+
+    BEFORE -- "60% reduction" --> AFTER
+```
+
+### Layer 2 — Model Isolation (no quota collisions)
+
+Each feature class uses a **dedicated model instance** so one noisy feature can't starve the others:
+
+```mermaid
+graph LR
+    subgraph Models ["3 Isolated Gemini Instances"]
+        M1["gemini-1.5-flash\nInstance 1\n15 RPM / 500 RPD"]
+        M2["gemini-2.0-flash-lite\nInstance 2\n10 RPM / 20 RPD"]
+        M3["gemini-1.5-flash\nInstance 3\n5 RPM / 20 RPD"]
+    end
+
+    M1 -- "General insights\nWin probability\nHistory data" --> F1["🔄 Every 30s"]
+    M2 -- "Tactical read\nMomentum shift" --> F2["🔄 Every 30s"]
+    M3 -- "Chat Q&A" --> F3["👆 On-demand only"]
+```
+
+### Layer 3 — Parallel Execution (50% faster, same quota)
+
+```mermaid
+sequenceDiagram
+    participant FE as React Frontend
+    participant API as FastAPI
+    participant M1 as Gemini Flash (insights)
+    participant M2 as Gemini Flash Lite (tactical)
+
+    note over FE,M2: ❌ Sequential — 6 seconds total
+    FE->>API: GET /api/insights/live
+    API->>M1: batch prompt
+    M1-->>API: insights (3s)
+    API->>M2: tactical prompt
+    M2-->>API: tactical (3s)
+    API-->>FE: all data (6s total)
+
+    note over FE,M2: ✅ Parallel — 3 seconds total
+    FE->>API: GET /api/insights/all-parallel
+    API->>M1: batch prompt
+    API->>M2: tactical prompt
+    M1-->>API: insights (3s)
+    M2-->>API: tactical (3s)
+    API-->>FE: all data (3s ⚡)
+```
+
+### Net Result
+
+| Metric | Naïve Approach | This App | Saving |
+|---|---|---|---|
+| API calls per refresh cycle | 5 | 2 | **60% fewer** |
+| Response latency | ~6s | ~3s | **2× faster** |
+| Quota collisions | Yes (shared) | No (isolated) | **0 collisions** |
+| Chat impact on insights | Starves quota | Independent | **Fully isolated** |
 
 ---
 
 ## 🚀 Running Locally
 
-To run the application on your local machine:
-
-**1. Install All Dependencies**
+**1. Install dependencies**
 ```bash
-# Install all dependencies (root, client, and server)
 npm run install-all
 ```
 
-**2. Set Up Environment Variables**
+**2. Set your Gemini API key**
 ```bash
-# Copy the example environment file
 cp server/.env.example server/.env
-
-# Edit server/.env and add your Google Gemini API key:
-# GEMINI_API_KEY=your_gemini_api_key_here
+# Edit server/.env:
+# GEMINI_API_KEY=your_key_here
 ```
+Get a free key at [aistudio.google.com](https://aistudio.google.com/app/apikey)
 
-**3. Start Development Servers**
+**3. Build frontend + start server**
 ```bash
-# Start both client and server in development mode
-npm run dev
+cd client && npm run build
+cd ..
+Copy-Item -Path "client\dist\*" -Destination "server\public\" -Recurse -Force
+python server\app.py
 ```
 
-This will start:
-- Client development server on `http://localhost:5173`
-- Backend server on `http://localhost:8080` (FastAPI)
-
-**Alternative: Manual Setup**
-```bash
-# Build the frontend for production
-cd client
-npm run build
-
-# Copy the built files to the server's public directory
-cp -r dist/* ../server/public/
-
-# Start the server
-cd ../server
-uvicorn app:app --host 0.0.0.0 --port 8080
-```
-
-The application will be running at `http://localhost:8080`.
-
-> Note: The Node/Express backend remains in the repo for reference, but the default runtime and Docker image use FastAPI.
+Visit `http://localhost:8080` — then **snap this window to the right half of your screen** and open Hotstar on the left. That's the whole point.
 
 ---
 
-## 📦 Deployment to Cloud Run
-
-If you wish to deploy your own instance to Google Cloud Run:
+## ☁️ Deploy to Cloud Run
 
 ```bash
-# Make sure you are authenticated with gcloud
 gcloud run deploy ipl-agent \
   --source . \
   --region us-central1 \
   --allow-unauthenticated
 ```
+
+---
+
+## 💡 Why This Matters
+
+Watching cricket is better when you understand what you're watching. The difference between a casual viewer and a knowledgeable fan is context — and that's exactly what this app provides in real time.
+
+**Win probability at 62%? The AI just told you why.**
+**SRH needs 19 off 13? The tactical read already flagged the bowling strategy.**
+**Wondering if MI can still make playoffs? Toggle it and see the table shift.**
+
+No more switching tabs. No more missing a wicket while reading Cricbuzz. Just watch — and have the stats on your fingertips.
+
+---
+
+## 🛠 Tech Stack
+
+- **Frontend:** React + Vite + Vanilla CSS (glassmorphism dark mode)
+- **Backend:** FastAPI (Python) + asyncio parallel execution
+- **AI:** Google Gemini 1.5 Flash, 2.0 Flash Lite (multi-model quota isolation)
+- **Deployment:** Docker + Google Cloud Run
+- **Data:** Mock match engine (CricAPI integration planned)
+
+---
+
+*Built at a hackathon in ~4 hours. Rough around the edges, but the experience is real.*
