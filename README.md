@@ -1,5 +1,12 @@
 # 🏏 IPL Insights — AI-Powered Second-Screen Companion
 
+---
+
+> # 🔴 WORKS BEST DURING A LIVE IPL MATCH
+> ### Open this alongside your Hotstar tab when a match is in progress — that's when the AI insights, win probability, momentum analysis, and tactical reads are all firing in real time. Outside of a live match, you'll see less stats (as there is no way to show who is currently batting and who is balling) and mock/ previous match  data.
+
+---
+
 > **The idea is simple:** Open this app side-by-side with your Hotstar tab. Watch the match. Get stats, AI insights, and win probabilities on your fingertips — without ever switching tabs.
 
 **[🔴 Live Demo on Google Cloud Run](https://ipl-insight-123853821395.us-central1.run.app)**
@@ -77,10 +84,10 @@ graph TD
         EP4["/api/win-probability\nhistory data"]
     end
 
-    subgraph AI ["🤖 Gemini AI — 3 Isolated Models"]
-        M1["gemini-1.5-flash\n15 RPM — General Insights"]
-        M2["gemini-2.0-flash-lite\n10 RPM — Tactical Read"]
-        M3["gemini-1.5-flash (chat)\n5 RPM — Q&A only"]
+    subgraph AI ["🤖 Gemini AI — 3 Isolated Instances"]
+        M1["gemini-3.1-flash-lite\nInstance 1 — General Insights"]
+        M2["gemini-3.1-flash-lite\nInstance 2 — Tactical Read"]
+        M3["gemini-3.1-flash-lite\nInstance 3 — Chat Q&A"]
     end
 
     subgraph Data ["📦 Data Layer"]
@@ -131,8 +138,8 @@ flowchart LR
 
     subgraph AFTER ["✅ After — 2 batched calls"]
         direction TB
-        B1["tactical + momentum + prediction\n3-in-1 prompt"] --> G6["Gemini Flash"]
-        B2["momentum shift + tactical read\n2-in-1 prompt"] --> G7["Gemini Flash Lite"]
+        B1["tactical + momentum + prediction\n3-in-1 prompt"] --> G6["gemini-3.1-flash-lite\nInstance 1"]
+        B2["momentum shift + tactical read\n2-in-1 prompt"] --> G7["gemini-3.1-flash-lite\nInstance 2"]
     end
 
     BEFORE -- "60% reduction" --> AFTER
@@ -144,10 +151,10 @@ Each feature class uses a **dedicated model instance** so one noisy feature can'
 
 ```mermaid
 graph LR
-    subgraph Models ["3 Isolated Gemini Instances"]
-        M1["gemini-1.5-flash\nInstance 1\n15 RPM / 500 RPD"]
-        M2["gemini-2.0-flash-lite\nInstance 2\n10 RPM / 20 RPD"]
-        M3["gemini-1.5-flash\nInstance 3\n5 RPM / 20 RPD"]
+    subgraph Models ["3 Isolated gemini-3.1-flash-lite Instances"]
+        M1["Instance 1\nmodel_workhorse"]
+        M2["Instance 2\nmodel_tactical"]
+        M3["Instance 3\nmodel_chat"]
     end
 
     M1 -- "General insights\nWin probability\nHistory data" --> F1["🔄 Every 30s"]
@@ -161,21 +168,21 @@ graph LR
 sequenceDiagram
     participant FE as React Frontend
     participant API as FastAPI
-    participant M1 as Gemini Flash (insights)
-    participant M2 as Gemini Flash Lite (tactical)
+    participant M1 as gemini-3.1-flash-lite (Instance 1)
+    participant M2 as gemini-3.1-flash-lite (Instance 2)
 
     note over FE,M2: ❌ Sequential — 6 seconds total
     FE->>API: GET /api/insights/live
-    API->>M1: batch prompt
+    API->>M1: batched 3-in-1 prompt
     M1-->>API: insights (3s)
-    API->>M2: tactical prompt
+    API->>M2: batched 2-in-1 prompt
     M2-->>API: tactical (3s)
     API-->>FE: all data (6s total)
 
-    note over FE,M2: ✅ Parallel — 3 seconds total
+    note over FE,M2: ✅ Parallel via asyncio.gather — 3 seconds total
     FE->>API: GET /api/insights/all-parallel
-    API->>M1: batch prompt
-    API->>M2: tactical prompt
+    API->>M1: batched 3-in-1 prompt
+    API->>M2: batched 2-in-1 prompt
     M1-->>API: insights (3s)
     M2-->>API: tactical (3s)
     API-->>FE: all data (3s ⚡)
