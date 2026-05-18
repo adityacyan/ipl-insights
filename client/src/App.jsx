@@ -1,53 +1,84 @@
 import { useEffect, useMemo, useState } from 'react';
 import WinProbabilityChart from './components/WinProbabilityChart';
 
+/**
+ * API ENDPOINTS & UPDATE FREQUENCIES
+ * ===================================
+ * 
+ * 1. /api/live-context
+ *    - Updates: Once on component mount
+ *    - Data: Current match context, active batter/bowler
+ * 
+ * 2. /api/live-scores
+ *    - Updates: Every 20 seconds (20000ms)
+ *    - Data: Live match scores, teams, status
+ * 
+ * 3. /api/insights/live (GEMINI - Batched Insights)
+ *    - Updates: Every 2 minutes (120000ms) *** CHANGED FROM 30s ***
+ *    - Data: Tactical, Momentum, Prediction insights
+ *    - Endpoint: server/app.py -> /api/insights/live
+ * 
+ * 4. /api/tactical-insights (GEMINI - Tactical Analysis)
+ *    - Updates: Every 2 minutes (120000ms) *** CHANGED FROM 20s ***
+ *    - Data: Momentum Shift, Tactical Read
+ *    - Endpoint: server/app.py -> /api/tactical-insights
+ * 
+ * 5. /api/win-probability-history
+ *    - Updates: Every 2 minutes (120000ms)
+ *    - Data: Win probability chart data
+ * 
+ * 6. /api/tactical-chat (User-triggered)
+ *    - Updates: On user question submission
+ *    - Data: AI response to tactical questions
+ */
+
 const fallbackData = {
     match: {
         title: 'IPL companion',
-        team1: 'CSK',
-        team2: 'MI',
-        score: '184/4',
-        overs: '18.2',
-        runRate: '11.45',
-        winPercent: 62,
+        team1: 'Team A',
+        team2: 'Team B',
+        score: '162/5',
+        overs: '17.4',
+        runRate: '9.18',
+        winPercent: 58,
         feedId: 'TF-001'
     },
     insights: [
         {
             label: 'Momentum Shift',
-            text: 'Projected target reached 78% probability after over 17. High frequency boundaries detected.'
+            text: 'Projected target probability moved to 58% after a late surge. Boundary rate ticked up in the last two overs.'
         },
         {
             label: 'Tactical Read',
-            text: 'MI adjusting fields to wide-line yorker strategy. Gaikwad efficiency vs wide pace is 142.0.'
+            text: 'Bowling side shifting to wide-line yorkers with a sweeper out. Batter scoring rate versus wide pace is trending up.'
         }
     ],
     winHistory: {
-        cskPeak: 82,
-        miPeak: 44
+        team1Peak: 78,
+        team2Peak: 64
     },
     matchup: {
         striker: {
-            name: 'R. Gaikwad',
-            role: 'LHB',
-            team: 'CSK',
-            stats: '50 (34)'
+            name: 'Striker One',
+            role: 'RHB',
+            team: 'Team A',
+            stats: '42 (30)'
         },
         bowler: {
-            name: 'J. Bumrah',
+            name: 'Bowler One',
             role: 'RF',
-            team: 'MI',
-            stats: '3.2-0-21-2'
+            team: 'Team B',
+            stats: '3.0-0-24-1'
         },
         avgBallSpeed: 143.2,
-        avgBallSpeedPercent: 76,
-        matchupSR: 112.5,
-        matchupSRPercent: 58
+        avgBallSpeedPercent: 72,
+        matchupSR: 118.4,
+        matchupSRPercent: 61
     },
     recommendation:
-        'Target back-of-length to mitigate Gaikwad\'s current high-point drive efficiency.',
+        'Use back-of-length with a deep third to slow the scoring rate outside off.',
     prompt:
-        'Commander, what is the win probability if Dhoni enters now vs waiting for over 19.4?'
+        'What is the win probability if the finisher enters now versus after the next over?'
 };
 
 const clampPercent = (value) => Math.min(100, Math.max(0, value));
@@ -114,6 +145,21 @@ const computeRunRate = (innings) => {
     return (runs / overs).toFixed(2);
 };
 
+const formatInningsScore = (innings) => {
+    if (!innings) {
+        return null;
+    }
+    const runs = innings.r ?? innings.runs ?? innings.score;
+    const wickets = innings.w ?? innings.wkts ?? innings.wickets;
+    if (!Number.isFinite(runs)) {
+        return null;
+    }
+    if (Number.isFinite(wickets)) {
+        return `${runs}/${wickets}`;
+    }
+    return `${runs}`;
+};
+
 const initialsFor = (name = '') =>
     name
         .split(' ')
@@ -173,33 +219,73 @@ function App() {
         };
     }, []);
 
+    const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+
+    const isMatchCompleted = useMemo(() => {
+        const primary = liveScores?.matches?.[0];
+        if (!primary) {
+            return false;
+        }
+
+        return Boolean(primary.hideScore || primary.matchEnded || !primary.isLive);
+    }, [liveScores]);
+
+    const showActiveMatchup = useMemo(() => {
+        if (context?.isLive === true) {
+            return true;
+        }
+        const primary = liveScores?.matches?.[0];
+        return Boolean(primary?.isLive);
+    }, [context, liveScores]);
+
     useEffect(() => {
         let isMounted = true;
+        let timeoutId = null;
+
+        const scheduleNext = (delayMs) => {
+            if (!isMounted) {
+                return;
+            }
+            timeoutId = setTimeout(loadLiveScores, delayMs);
+        };
 
         const loadLiveScores = () => {
             fetch('/api/live-scores')
                 .then(res => res.json())
                 .then(data => {
-                    if (isMounted) {
-                        setLiveScores(data);
+                    if (!isMounted) {
+                        return;
                     }
+
+                    setLiveScores(data);
+
+                    const primary = data?.matches?.[0];
+                    const completed = Boolean(primary?.hideScore || primary?.matchEnded || !primary?.isLive);
+                    const delay = completed ? TWO_HOURS_MS : 20000;
+                    scheduleNext(delay);
                 })
-                .catch(() => null);
+                .catch(() => {
+                    scheduleNext(20000);
+                });
         };
 
         loadLiveScores();
-        const interval = setInterval(loadLiveScores, 20000);
 
         return () => {
             isMounted = false;
-            clearInterval(interval);
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
         };
     }, []);
 
     // OPTION 1: Fetch insights separately (current approach)
     // Fetch AI insights periodically
+    // UPDATED EVERY 2 MINUTES (120 seconds) from /api/insights/live endpoint
+    // STOPS POLLING when match is completed (backed off by live score polling)
     useEffect(() => {
         let isMounted = true;
+        let interval = null;
 
         const loadAiInsights = () => {
             fetch('/api/insights/live')
@@ -212,19 +298,23 @@ function App() {
                 .catch(() => null);
         };
 
-        // Load insights initially and then every 30 seconds
-        loadAiInsights();
-        const interval = setInterval(loadAiInsights, 30000);
+        if (!isMatchCompleted) {
+            loadAiInsights();
+            interval = setInterval(loadAiInsights, 120000);
+        }
 
         return () => {
             isMounted = false;
-            clearInterval(interval);
+            if (interval) clearInterval(interval);
         };
-    }, []);
+    }, [isMatchCompleted]);
 
     // Fetch tactical insights (momentum shift & tactical read) periodically
+    // UPDATED EVERY 2 MINUTES (120 seconds) from /api/tactical-insights endpoint
+    // STOPS POLLING when match is completed (backed off by live score polling)
     useEffect(() => {
         let isMounted = true;
+        let interval = null;
 
         const loadTacticalInsights = () => {
             fetch('/api/tactical-insights')
@@ -237,15 +327,16 @@ function App() {
                 .catch(() => null);
         };
 
-        // Load tactical insights initially and then every 20 seconds for more dynamic updates
-        loadTacticalInsights();
-        const interval = setInterval(loadTacticalInsights, 20000);
+        if (!isMatchCompleted) {
+            loadTacticalInsights();
+            interval = setInterval(loadTacticalInsights, 120000);
+        }
 
         return () => {
             isMounted = false;
-            clearInterval(interval);
+            if (interval) clearInterval(interval);
         };
-    }, []);
+    }, [isMatchCompleted]);
 
     // OPTION 2: Fetch ALL insights in parallel (FASTER - uncomment to use)
     // This makes 2 API calls simultaneously for minimum latency
@@ -282,8 +373,10 @@ function App() {
     */
 
     // Fetch win probability history
+    // STOPS POLLING when match is completed (backed off by live score polling)
     useEffect(() => {
         let isMounted = true;
+        let interval = null;
 
         const loadWinProbabilityHistory = () => {
             fetch('/api/win-probability-history')
@@ -296,15 +389,16 @@ function App() {
                 .catch(() => null);
         };
 
-        // Load history initially and then every 2 minutes (120 seconds)
-        loadWinProbabilityHistory();
-        const interval = setInterval(loadWinProbabilityHistory, 120000);
+        if (!isMatchCompleted) {
+            loadWinProbabilityHistory();
+            interval = setInterval(loadWinProbabilityHistory, 120000);
+        }
 
         return () => {
             isMounted = false;
-            clearInterval(interval);
+            if (interval) clearInterval(interval);
         };
-    }, []);
+    }, [isMatchCompleted]);
 
     const match = useMemo(() => {
         if (!context?.match) {
@@ -327,19 +421,30 @@ function App() {
 
         // Use the improved data structure from our enhanced API
         const currentInnings = primary.currentInnings || {};
+        const team1Innings = primary.team1?.score || null;
+        const team2Innings = primary.team2?.score || null;
         const battingTeam = primary.battingTeam || primary.teams;
         const bowlingTeam = primary.bowlingTeam || primary.opponent;
 
-        // Format the current score
-        const runs = currentInnings.runs || 0;
-        const wickets = currentInnings.wickets || 0;
-        const overs = currentInnings.overs || 0;
+        // Check if match is completed (hideScore flag or no currentInnings data)
+        const isCompleted = primary.hideScore || primary.matchEnded || !primary.isLive;
 
-        const scoreText = `${runs}/${wickets}`;
-        const oversText = `${overs}`;
+        // Format the current score - hide for completed matches
+        let scoreText = "0/0";
+        let oversText = "0";
+        let runRate = "0.00";
 
-        // Calculate run rate
-        const runRate = overs > 0 ? (runs / parseOversToFloat(overs)).toFixed(2) : "0.00";
+        if (!isCompleted && currentInnings && Object.keys(currentInnings).length > 0) {
+            const runs = currentInnings.r || currentInnings.runs || 0;
+            const wickets = currentInnings.w || currentInnings.wickets || 0;
+            const overs = currentInnings.o || currentInnings.overs || 0;
+
+            scoreText = `${runs}/${wickets}`;
+            oversText = `${overs}`;
+
+            // Calculate run rate
+            runRate = overs > 0 ? (runs / parseOversToFloat(overs)).toFixed(2) : "0.00";
+        }
 
         return {
             team1: getTeamShortForm(battingTeam),
@@ -349,9 +454,12 @@ function App() {
             status: primary.status,
             runRate: runRate,
             isLive: primary.isLive,
+            isCompleted: isCompleted,
             description: primary.description,
             venue: primary.venue,
-            matchFormat: primary.matchFormat
+            matchFormat: primary.matchFormat,
+            team1Innings,
+            team2Innings
         };
     }, [liveScores, match]);
 
@@ -369,13 +477,13 @@ function App() {
         : match;
 
     // Determine if match is completed and who won
-    const isMatchCompleted = liveScoreSummary?.status &&
+    const isStatusCompleted = liveScoreSummary?.status &&
         (liveScoreSummary.status.toLowerCase().includes('won') ||
             liveScoreSummary.status.toLowerCase().includes('win'));
 
     // Extract winner from status
     let winningTeam = null;
-    if (isMatchCompleted && liveScoreSummary?.status) {
+    if (isStatusCompleted && liveScoreSummary?.status) {
         const status = liveScoreSummary.status;
         if (status.includes(liveMatch.team1)) {
             winningTeam = liveMatch.team1;
@@ -391,6 +499,13 @@ function App() {
             winningTeam = liveMatch.team2;
         }
     }
+
+    const completedScoreTeam1 = liveScoreSummary?.isCompleted
+        ? formatInningsScore(liveScoreSummary.team1Innings)
+        : null;
+    const completedScoreTeam2 = liveScoreSummary?.isCompleted
+        ? formatInningsScore(liveScoreSummary.team2Innings)
+        : null;
 
     const matchup = useMemo(() => {
         const striker = context?.activeBatter
@@ -418,7 +533,7 @@ function App() {
     let winPercent = match.winPercent;
     let losePercent = 100 - winPercent;
 
-    if (isMatchCompleted && winningTeam) {
+    if (isStatusCompleted && winningTeam) {
         if (winningTeam === liveMatch.team1) {
             winPercent = 100;
             losePercent = 0;
@@ -432,8 +547,8 @@ function App() {
     losePercent = clampPercent(losePercent);
 
     // Generate dynamic chart data
-    const team1Peak = winProbabilityHistory?.team1Peak || fallbackData.winHistory.cskPeak;
-    const team2Peak = winProbabilityHistory?.team2Peak || fallbackData.winHistory.miPeak;
+    const team1Peak = winProbabilityHistory?.team1Peak || fallbackData.winHistory.team1Peak;
+    const team2Peak = winProbabilityHistory?.team2Peak || fallbackData.winHistory.team2Peak;
 
     // Handle chat submission
     const handleChatSubmit = async (e) => {
@@ -492,17 +607,37 @@ function App() {
                     <section className="live-card">
                         <div className="live-row">
                             <span className="live-tag">
-                                {isMatchCompleted ? 'Match Completed' : (liveScoreSummary?.isLive ? 'Live Match' : 'Latest Match')}
+                                {isMatchCompleted
+                                    ? (formatStatusWithShortForms(liveScoreSummary?.status) || 'Match Completed')
+                                    : (liveScoreSummary?.isLive ? 'Live Match' : 'Latest Match')}
                             </span>
                             <span className="live-feed">Tactical Feed ID: {match.feedId}</span>
                         </div>
-                        <div className="score-row">
-                            <div className="score-team">
-                                {liveMatch.team1} {liveMatch.score}
-                                <span className="score-overs">({liveMatch.overs})</span>
+
+                        {/* Only show score for live matches */}
+                        {!liveScoreSummary?.isCompleted && (
+                            <>
+                                <div className="score-row">
+                                    <div className="score-team">
+                                        {liveMatch.team1} {liveMatch.score}
+                                        <span className="score-overs">({liveMatch.overs})</span>
+                                    </div>
+                                    <div className="score-rate">{liveMatch.runRate}</div>
+                                </div>
+                            </>
+                        )}
+
+                        {/* For completed matches, show team names without score */}
+                        {liveScoreSummary?.isCompleted && (
+                            <div className="score-row">
+                                <div className="score-team">
+                                    {liveMatch.team1} {completedScoreTeam1 || '--'}
+                                    <span style={{ margin: '0 10px' }}>|</span>
+                                    {liveMatch.team2} {completedScoreTeam2 || '--'}
+                                </div>
                             </div>
-                            <div className="score-rate">{liveMatch.runRate}</div>
-                        </div>
+                        )}
+
                         <div className="win-probability-section">
                             <div className="win-probability-header">
                                 LIVE WIN PROBABILITY
@@ -523,7 +658,7 @@ function App() {
                             </div>
                         </div>
 
-                        {liveScoreSummary?.status && (
+                        {liveScoreSummary?.status && !isMatchCompleted && (
                             <div className="live-row" style={{ marginTop: '10px' }}>
                                 <span className="live-tag">Status</span>
                                 <span className="live-feed">{formatStatusWithShortForms(liveScoreSummary.status)}</span>
@@ -605,67 +740,69 @@ function App() {
                         )}
                     </section>
 
-                    <section className="matchup-card">
-                        <div className="section-title">
-                            <span>Active Matchup</span>
-                            <span className="critical-tag">Critical</span>
-                        </div>
-                        <div className="matchup-grid">
-                            <div className="player-tile">
-                                <div className="player-portrait">
-                                    <span>{initialsFor(matchup.striker.name)}</span>
+                    {showActiveMatchup && (
+                        <section className="matchup-card">
+                            <div className="section-title">
+                                <span>Active Matchup</span>
+                                <span className="critical-tag">Critical</span>
+                            </div>
+                            <div className="matchup-grid">
+                                <div className="player-tile">
+                                    <div className="player-portrait">
+                                        <span>{initialsFor(matchup.striker.name)}</span>
+                                    </div>
+                                    <div className="player-meta">
+                                        <div className="player-name">{matchup.striker.name}</div>
+                                        <div className="player-sub">
+                                            {matchup.striker.team} • {matchup.striker.role} | {matchup.striker.stats}
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="player-meta">
-                                    <div className="player-name">{matchup.striker.name}</div>
-                                    <div className="player-sub">
-                                        {matchup.striker.team} • {matchup.striker.role} | {matchup.striker.stats}
+                                <div className="player-tile highlight">
+                                    <div className="player-portrait alt">
+                                        <span>{initialsFor(matchup.bowler.name)}</span>
+                                    </div>
+                                    <div className="player-meta">
+                                        <div className="player-name">{matchup.bowler.name}</div>
+                                        <div className="player-sub">
+                                            {matchup.bowler.team} • {matchup.bowler.role} | {matchup.bowler.stats}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                            <div className="player-tile highlight">
-                                <div className="player-portrait alt">
-                                    <span>{initialsFor(matchup.bowler.name)}</span>
+
+                            <div className="metric-block">
+                                <div className="metric-row">
+                                    <span>Avg Ball Speed</span>
+                                    <strong>{matchup.avgBallSpeed} KPH</strong>
                                 </div>
-                                <div className="player-meta">
-                                    <div className="player-name">{matchup.bowler.name}</div>
-                                    <div className="player-sub">
-                                        {matchup.bowler.team} • {matchup.bowler.role} | {matchup.bowler.stats}
-                                    </div>
+                                <div className="metric-track">
+                                    <div
+                                        className="metric-fill"
+                                        style={{ width: `${clampPercent(matchup.avgBallSpeedPercent)}%` }}
+                                    />
                                 </div>
                             </div>
-                        </div>
 
-                        <div className="metric-block">
-                            <div className="metric-row">
-                                <span>Avg Ball Speed</span>
-                                <strong>{matchup.avgBallSpeed} KPH</strong>
+                            <div className="metric-block">
+                                <div className="metric-row">
+                                    <span>Matchup SR</span>
+                                    <strong>{matchup.matchupSR}</strong>
+                                </div>
+                                <div className="metric-track">
+                                    <div
+                                        className="metric-fill muted"
+                                        style={{ width: `${clampPercent(matchup.matchupSRPercent)}%` }}
+                                    />
+                                </div>
                             </div>
-                            <div className="metric-track">
-                                <div
-                                    className="metric-fill"
-                                    style={{ width: `${clampPercent(matchup.avgBallSpeedPercent)}%` }}
-                                />
-                            </div>
-                        </div>
 
-                        <div className="metric-block">
-                            <div className="metric-row">
-                                <span>Matchup SR</span>
-                                <strong>{matchup.matchupSR}</strong>
+                            <div className="recommendation">
+                                <span className="recommendation-label">AI Recommendation</span>
+                                <p>{fallbackData.recommendation}</p>
                             </div>
-                            <div className="metric-track">
-                                <div
-                                    className="metric-fill muted"
-                                    style={{ width: `${clampPercent(matchup.matchupSRPercent)}%` }}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="recommendation">
-                            <span className="recommendation-label">AI Recommendation</span>
-                            <p>{fallbackData.recommendation}</p>
-                        </div>
-                    </section>
+                        </section>
+                    )}
                 </div>
 
                 <div className="panel-footer">

@@ -41,18 +41,18 @@ io.on('connection', (socket) => {
 
 // API: Get live match context
 app.get('/api/live-context', (req, res) => {
-  // Simulating a live match between RCB and MI
+  // Simulating a live match between generic teams
   res.json({
-    match: { team1: 'RCB', team2: 'MI', venue: 'Wankhede Stadium' },
-    activeBatter: players.find(p => p.id === 'p1'), // Virat Kohli
-    activeBowler: players.find(p => p.id === 'p2')  // Jasprit Bumrah
+    match: { team1: 'Team A', team2: 'Team B', venue: 'City Stadium' },
+    activeBatter: players.find(p => p.id === 'p1'),
+    activeBowler: players.find(p => p.id === 'p2')
   });
 });
 
 // API: Get playoff probabilities
 app.get('/api/probabilities', (req, res) => {
-  const winner = req.query.winner; // 'RCB' or 'MI'
-  const currentMatch = { team1: 'RCB', team2: 'MI' };
+  const winner = req.query.winner; // 'Team A' or 'Team B'
+  const currentMatch = { team1: 'Team A', team2: 'Team B' };
   const loser = winner === currentMatch.team1 ? currentMatch.team2 : currentMatch.team1;
 
   if (!winner) {

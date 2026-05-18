@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node index.js"
+    "start": "node -e \"console.error('Node server disabled. Use FastAPI: python server/app.py'); process.exit(1)\"",
+    "dev": "node -e \"console.error('Node server disabled. Use FastAPI: python server/app.py'); process.exit(1)\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
